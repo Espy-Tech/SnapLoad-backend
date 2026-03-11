@@ -160,14 +160,27 @@ function getVideoInfoRapidApi(url) {
           const medias = json.medias || json.links || json.data || [];
 
           // Filtrer uniquement les vraies videos (type=video, extension=mp4)
+          const qualityLabels = {
+            'hd_no_watermark':  { label: 'HD',      info: 'Sans filigrane' },
+            'no_watermark':     { label: '720p',     info: 'Sans filigrane' },
+            'no_watermark_hd':  { label: 'Full HD',  info: 'Sans filigrane' },
+            'watermark':        { label: 'SD',       info: 'Avec filigrane' },
+            'hd':               { label: 'HD',       info: 'MP4' },
+            'sd':               { label: 'SD',       info: 'MP4' },
+          };
+
           const qualities = medias
             .filter(m => m.url && m.url.startsWith('http') && m.type === 'video' && m.extension === 'mp4')
-            .map((m, i) => ({
-              label:       m.quality || m.resolution || ('Option ' + (i+1)),
-              directUrl:   m.url,
-              info:        'MP4',
-              recommended: i === 0,
-            }));
+            .map((m, i) => {
+              const raw   = (m.quality || '').toLowerCase().replace(/\s+/g, '_');
+              const known = qualityLabels[raw];
+              return {
+                label:       known ? known.label : (m.resolution || m.quality || ('Option ' + (i+1))),
+                info:        known ? known.info  : 'MP4',
+                directUrl:   m.url,
+                recommended: raw.includes('hd') && !raw.includes('watermark') ? true : i === 0,
+              };
+            });
 
           if (qualities.length === 0) {
             reject(new Error('Aucun lien trouvé. La vidéo est peut-être privée.'));
