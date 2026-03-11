@@ -190,7 +190,7 @@ function getVideoInfoRapidApi(url) {
           resolve({
             title:     json.title     || json.name    || 'Vidéo',
             thumbnail: json.thumbnail || json.picture || json.cover || '',
-            duration:  json.duration  || null,
+            duration:  json.duration > 10000 ? Math.round(json.duration / 1000) : json.duration || null,
             platform:  json.source    || json.src     || 'unknown',
             links:     qualities,
           });
@@ -226,16 +226,18 @@ app.get('/api/info', async (req, res) => {
 
     if (method === 'rapidapi') {
       const info = await getVideoInfoRapidApi(url);
+      const host = req.protocol + '://' + req.get('host');
       return res.json({
         method: 'rapidapi',
         title:     info.title,
-        thumbnail: info.thumbnail,
+        thumbnail: info.thumbnail ? `${host}/api/proxy-image?url=${encodeURIComponent(info.thumbnail)}` : '',
         duration:  info.duration,
         platform:  info.platform,
         qualities: info.links.map(l => ({
-          label:      l.label || 'Auto',
-          directUrl:  l.directUrl,
-          info:       l.info,
+          label:       l.label || 'Auto',
+          directUrl:   l.directUrl,
+          info:        l.info,
+          recommended: l.recommended,
         }))
       });
     } else {
@@ -259,6 +261,22 @@ app.get('/api/info', async (req, res) => {
     console.error('[/api/info]', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// GET /api/proxy-image?url=...
+// Proxy pour les miniatures bloquées par CORS (TikTok, Instagram)
+app.get('/api/proxy-image', (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).send('URL manquante');
+
+  const protocol = url.startsWith('https') ? require('https') : require('http');
+  protocol.get(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.tiktok.com/' }
+  }, (proxyRes) => {
+    res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    proxyRes.pipe(res);
+  }).on('error', () => res.status(500).send('Erreur image'));
 });
 
 // POST /api/proxy-download
