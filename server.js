@@ -249,29 +249,53 @@ app.get('/api/info', async (req, res) => {
 });
 
 // POST /api/proxy-download
-// Télécharge depuis une URL distante et la streame — contourne le CORS Instagram
+// Télécharge depuis une URL distante avec suivi des redirections
 app.post('/api/proxy-download', async (req, res) => {
   const { directUrl, filename } = req.body;
   if (!directUrl) return res.status(400).json({ error: 'directUrl manquante' });
 
-  try {
-    const protocol = directUrl.startsWith('https') ? require('https') : require('http');
-    protocol.get(directUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Referer': 'https://www.instagram.com/',
+  function fetchWithRedirects(url, redirectCount = 0) {
+    if (redirectCount > 5) {
+      res.status(500).json({ error: 'Trop de redirections' });
+      return;
+    }
+
+    const protocol = url.startsWith('https') ? require('https') : require('http');
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+      'Referer':    'https://www.tiktok.com/',
+      'Accept':     '*/*',
+    };
+
+    protocol.get(url, { headers }, (proxyRes) => {
+      // Suivre les redirections 301/302
+      if ([301, 302, 303, 307, 308].includes(proxyRes.statusCode) && proxyRes.headers.location) {
+        console.log('[proxy] Redirect', proxyRes.statusCode, '->', proxyRes.headers.location);
+        fetchWithRedirects(proxyRes.headers.location, redirectCount + 1);
+        return;
       }
-    }, (proxyRes) => {
-      res.setHeader('Content-Disposition', `attachment; filename="${filename || 'video.mp4'}"`);
+
+      if (proxyRes.statusCode !== 200) {
+        console.error('[proxy] Status', proxyRes.statusCode);
+        res.status(500).json({ error: 'Erreur serveur distant: ' + proxyRes.statusCode });
+        return;
+      }
+
+      res.setHeader('Content-Disposition', \`attachment; filename="\${filename || 'video.mp4'}"\`);
       res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'video/mp4');
       if (proxyRes.headers['content-length']) {
         res.setHeader('Content-Length', proxyRes.headers['content-length']);
       }
       proxyRes.pipe(res);
+
     }).on('error', (err) => {
       console.error('[proxy-download]', err.message);
-      res.status(500).json({ error: 'Impossible de télécharger la vidéo' });
+      if (!res.headersSent) res.status(500).json({ error: err.message });
     });
+  }
+
+  try {
+    fetchWithRedirects(directUrl);
   } catch (err) {
     console.error('[proxy-download]', err.message);
     res.status(500).json({ error: err.message });
@@ -344,5 +368,3 @@ app.listen(PORT, () => {
   console.log(`📦 Méthode : ${process.env.DOWNLOAD_METHOD || 'ytdlp'}`);
   console.log(`🔑 RapidAPI Key : ${process.env.RAPIDAPI_KEY ? '✓ configurée' : '✗ non configurée'}\n`);
 });
-
-
