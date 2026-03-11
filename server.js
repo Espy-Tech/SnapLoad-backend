@@ -281,7 +281,7 @@ app.post('/api/proxy-download', async (req, res) => {
         return;
       }
 
-      res.setHeader('Content-Disposition', \`attachment; filename="\${filename || 'video.mp4'}"\`);
+      res.setHeader('Content-Disposition', 'attachment; filename="' + (filename || 'video.mp4') + '"');
       res.setHeader('Content-Type', proxyRes.headers['content-type'] || 'video/mp4');
       if (proxyRes.headers['content-length']) {
         res.setHeader('Content-Length', proxyRes.headers['content-length']);
